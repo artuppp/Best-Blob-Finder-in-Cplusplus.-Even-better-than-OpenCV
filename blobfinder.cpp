@@ -279,12 +279,6 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
     // Compute peak mask
     int size = 1;
     cv::Mat peak_mask = _get_peak_mask(cube, size, threshold);
-    // Show mask images
-    for (int i = 0; i < peak_mask.size[0]; i++)
-    {
-        cv::imshow("Slice", cv::Mat(image.size(), CV_32F, peak_mask.data + i * image.rows * image.cols * sizeof(float)));
-        cv::waitKey(0);
-    }
     // Get peaks (sigma, y, x)
     auto peaks = _get_high_intensity_peaks(peak_mask);
     // Compute blob radius
