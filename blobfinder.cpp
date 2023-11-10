@@ -286,7 +286,7 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
     // lm = np.hstack([lm[:, :-1], sigmas_of_peaks])
     std::transform(std::execution::par_unseq, peaks.begin(), peaks.end(), peaks.begin(), [sigma_list](std::tuple<int, int, float>& x) {
         // Corregimos radios (= desv. típica gaussiana) con raiz de 2:
-        std::get<0>(x) = sigma_list[std::get<0>(x) + 1] * std::sqrt(2);
+        std::get<0>(x) = sigma_list[std::get<0>(x) - 1] * std::sqrt(2);
         return x;
     });
     return peaks;
