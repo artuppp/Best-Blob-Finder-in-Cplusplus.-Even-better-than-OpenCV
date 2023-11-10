@@ -120,24 +120,20 @@ std::vector<float> gaussian_kernel1d(float sigma, int order, int radius) {
     std::vector<float> exponent_range(order + 1);
     float sigma2 = sigma * sigma;
 
-    for (int i = 0; i <= order; ++i) {
-        exponent_range[i] = i;
-    }
+    std::iota(exponent_range.begin(), exponent_range.end(), 0);
 
-    for (int i = -radius; i <= radius; ++i) {
-        float x = static_cast<float>(i);
-        float phi_x = std::exp(-0.5 / (sigma2) * (x * x));
-        kernel[i + radius] = phi_x;
-    }
+//    for (int i = -radius; i <= radius; ++i) {
+//        float x = static_cast<float>(i);
+//        float phi_x = std::exp(-0.5 / (sigma2) * (x * x));
+//        kernel[i + radius] = phi_x;
+//    }
+    std::iota(kernel.begin(), kernel.end(), -radius);
+    std::transform(std::execution::par_unseq, kernel.begin(), kernel.end(), kernel.begin(), [sigma2](float& x) {
+        return std::exp(-0.5 / (sigma2) * (x * x));
+    });
 
-    // Normalize the kernel
-    float sum = 0.0;
-    for (float value : kernel) {
-        sum += value;
-    }
-    for (float &value : kernel) {
-        value /= sum;
-    }
+    float sum = std::accumulate(kernel.begin(), kernel.end(), 0.0);
+    std::transform(std::execution::par_unseq, kernel.begin(), kernel.end(), kernel.begin(), [sum](float& x) { return x / sum; });
 
     if (order == 0) {
         return kernel;
@@ -263,7 +259,7 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
     for (int i = 1; i < num_sigma; i++)
     {
         //ndi.gaussian_laplace(image, s)
-        cv::Mat slice = LoGFilter(image, sigma_list[i]);
+        cv::Mat slice = LoGFilter(image, sigma_list[i-1]);
         //-ndi.gaussian_laplace(image, s) * np.mean(s)**2
         int currentSigma = sigma_list[i];
         std::transform(std::execution::par_unseq, slice.begin<float>(), slice.end<float>(), slice.begin<float>(), [currentSigma](float& x) {
@@ -275,7 +271,6 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
     // Last slice is padding
     std::memcpy(cube.data + (num_sigma + 1) * emptySlice.rows * emptySlice.cols * sizeof(float), emptySlice.data, emptySlice.rows * emptySlice.cols * sizeof(float));
     // Compute local maximas
-
     // Compute peak mask
     int size = 1;
     cv::Mat peak_mask = _get_peak_mask(cube, size, threshold);
@@ -290,7 +285,8 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
     // sigmas_of_peaks = sigma_list[local_maxima[:, -1]]
     // lm = np.hstack([lm[:, :-1], sigmas_of_peaks])
     std::transform(std::execution::par_unseq, peaks.begin(), peaks.end(), peaks.begin(), [sigma_list](std::tuple<int, int, float>& x) {
-        std::get<0>(x) = sigma_list[std::get<0>(x) + 1];
+        // Corregimos radios (= desv. típica gaussiana) con raiz de 2:
+        std::get<0>(x) = sigma_list[std::get<0>(x) + 1] * std::sqrt(2);
         return x;
     });
     return peaks;

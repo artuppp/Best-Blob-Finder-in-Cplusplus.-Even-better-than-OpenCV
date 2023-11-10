@@ -18,7 +18,9 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a0cf756b-6a9e-4df9-9bff-0debb4d81209" name="Changes" comment="" />
+    <list default="true" id="a0cf756b-6a9e-4df9-9bff-0debb4d81209" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/blobfinder.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/blobfinder.cpp" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
