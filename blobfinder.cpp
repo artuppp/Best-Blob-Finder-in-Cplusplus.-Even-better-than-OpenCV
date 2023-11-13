@@ -1,8 +1,130 @@
 #include "blobfinder.h"
 #include "execution"
 
+
 /**
- * @brief dilate1D
+ * @brief Code for calculate the gaussian kernel in 1D
+ * @param sigma
+ * @param order
+ * @param radius
+ * @return
+ */
+std::vector<float> gaussian_kernel1d(float sigma, int order, int radius) {
+    if (order < 0) {
+        throw std::invalid_argument("order must be non-negative");
+    }
+
+    std::vector<float> kernel(2 * radius + 1);
+    std::vector<float> exponent_range(order + 1);
+    float sigma2 = sigma * sigma;
+
+    std::iota(exponent_range.begin(), exponent_range.end(), 0);
+
+    //    for (int i = -radius; i <= radius; ++i) {
+    //        float x = static_cast<float>(i);
+    //        float phi_x = std::exp(-0.5 / (sigma2) * (x * x));
+    //        kernel[i + radius] = phi_x;
+    //    }
+    std::iota(kernel.begin(), kernel.end(), -radius);
+    std::transform(std::execution::par_unseq, kernel.begin(), kernel.end(), kernel.begin(), [sigma2](float& x) {
+        return std::exp(-0.5 / (sigma2) * (x * x));
+    });
+
+    float sum = std::accumulate(kernel.begin(), kernel.end(), 0.0);
+    std::transform(std::execution::par_unseq, kernel.begin(), kernel.end(), kernel.begin(), [sum](float& x) { return x / sum; });
+
+    if (order == 0) {
+        return kernel;
+    } else {
+        // Calculate q(x) * phi(x) using matrix operators
+        std::vector<float> q(order + 1, 0.0);
+        std::vector<float> q_deriv(order + 1, 0.0);
+        q[0] = 1.0;
+
+        std::vector<float> D((order + 1) * (order + 1));
+        std::vector<float> P((order + 1) * (order + 1));
+        // D = np.diag(exponent_range[1:], 1)
+        for (int i = 0; i < order; ++i) {
+            int index = i * (order + 1) + i + 1;
+            if (index < D.size()) {
+                D[index] = exponent_range[i + 1];
+            }
+        }
+        // P = np.diag(np.ones(order)/-sigma2,-1)
+        for (int i = 0; i < order; ++i) {
+            int index = (i + 1) * (order + 1) + i;
+            if (index < D.size()) {
+                P[index] = -1.0 / sigma2;
+            }
+        }
+        // D = D + P
+        for (int i = 0; i < (order + 1) * (order + 1); ++i) {
+            D[i] += P[i];
+        }
+        for (int i = 0; i < order; i++){
+            // q = Q_deriv.dot(q)
+            for (int j = 0; j < order + 1; j++){
+                q_deriv[j] = std::inner_product(D.begin() + j * (order + 1), D.begin() + (j + 1) * (order + 1), q.begin(), 0.0);
+            }
+            q = q_deriv;
+        }
+        // a = (x[:, None] ** exponent_range)
+        std::vector<float> a((2 * radius + 1) * (order + 1), 0.0);
+        for (int i = 0; i < 2 * radius + 1; ++i) {
+            for (int j = 0; j < order + 1; ++j) {
+                a[i * (order + 1) + j] = std::pow(i - radius, j);
+            }
+        }
+        // q = a.dot(q)
+        std::vector<float> newQ(2 * radius + 1, 0.0);
+        for (int i = 0; i < 2 * radius + 1; ++i) {
+            newQ[i] = std::inner_product(a.begin() + i * (order + 1), a.begin() + (i + 1) * (order + 1), q.begin(), 0.0);
+        }
+        // q = q * phi_x
+        for (int i = 0; i < 2 * radius + 1; ++i) {
+            newQ[i] *= kernel[i];
+        }
+        return newQ;
+    }
+}
+
+/**
+ * @brief BlobFinder::BlobFinder default constructor
+ */
+BlobFinder::BlobFinder()
+{
+    this->num_sigma_precalculated = 0;
+    this->max_sigma_precalculated = 0;
+    this->min_sigma_precalculated = 0;
+}
+
+/**
+ * @brief BlobFinder::BlobFinder constructor
+ * @param min_sigma
+ * @param max_sigma
+ * @param num_sigma
+ */
+BlobFinder::BlobFinder(float min_sigma, float max_sigma, int num_sigma)
+{
+    this->num_sigma_precalculated = num_sigma;
+    this->max_sigma_precalculated = max_sigma;
+    this->min_sigma_precalculated = min_sigma;
+    // Precalculate sigma values
+    float sigma_step = (max_sigma - min_sigma) / (num_sigma - 1);
+    for (int i = 0; i < num_sigma; i++)
+    {
+        this->sigma_precalculated.push_back(min_sigma + i * sigma_step);
+    }
+    for (int i = 0; i < num_sigma; i++)
+    {
+        int ksize = int(4 * sigma_precalculated[i] + 0.5);
+        this->precalculated_kernels_gauss.push_back(gaussian_kernel1d(sigma_precalculated[i], 0, ksize));
+        this->precalculated_kernels_laplacian.push_back(gaussian_kernel1d(sigma_precalculated[i], 2, ksize));
+    }
+}
+
+/**
+ * @brief dilate1D Maximum filter in 1D
  * @param src
  * @param dst
  * @param length
@@ -104,91 +226,6 @@ cv::Mat BlobFinder::_get_peak_mask(cv::Mat image, int kernelSize, float threshol
     return out;
 }
 
-/**
- * @brief Code for calculate the gaussian kernel in 1D
- * @param sigma
- * @param order
- * @param radius
- * @return
- */
-std::vector<float> gaussian_kernel1d(float sigma, int order, int radius) {
-    if (order < 0) {
-        throw std::invalid_argument("order must be non-negative");
-    }
-
-    std::vector<float> kernel(2 * radius + 1);
-    std::vector<float> exponent_range(order + 1);
-    float sigma2 = sigma * sigma;
-
-    std::iota(exponent_range.begin(), exponent_range.end(), 0);
-
-//    for (int i = -radius; i <= radius; ++i) {
-//        float x = static_cast<float>(i);
-//        float phi_x = std::exp(-0.5 / (sigma2) * (x * x));
-//        kernel[i + radius] = phi_x;
-//    }
-    std::iota(kernel.begin(), kernel.end(), -radius);
-    std::transform(std::execution::par_unseq, kernel.begin(), kernel.end(), kernel.begin(), [sigma2](float& x) {
-        return std::exp(-0.5 / (sigma2) * (x * x));
-    });
-
-    float sum = std::accumulate(kernel.begin(), kernel.end(), 0.0);
-    std::transform(std::execution::par_unseq, kernel.begin(), kernel.end(), kernel.begin(), [sum](float& x) { return x / sum; });
-
-    if (order == 0) {
-        return kernel;
-    } else {
-        // Calculate q(x) * phi(x) using matrix operators
-        std::vector<float> q(order + 1, 0.0);
-        std::vector<float> q_deriv(order + 1, 0.0);
-        q[0] = 1.0;
-
-        std::vector<float> D((order + 1) * (order + 1));
-        std::vector<float> P((order + 1) * (order + 1));
-        // D = np.diag(exponent_range[1:], 1)
-        for (int i = 0; i < order; ++i) {
-            int index = i * (order + 1) + i + 1;
-            if (index < D.size()) {
-                D[index] = exponent_range[i + 1];
-            }
-        }
-        // P = np.diag(np.ones(order)/-sigma2,-1)
-        for (int i = 0; i < order; ++i) {
-            int index = (i + 1) * (order + 1) + i;
-            if (index < D.size()) {
-                P[index] = -1.0 / sigma2;
-            }
-        }
-        // D = D + P
-        for (int i = 0; i < (order + 1) * (order + 1); ++i) {
-            D[i] += P[i];
-        }
-        for (int i = 0; i < order; i++){
-            // q = Q_deriv.dot(q)
-            for (int j = 0; j < order + 1; j++){
-                q_deriv[j] = std::inner_product(D.begin() + j * (order + 1), D.begin() + (j + 1) * (order + 1), q.begin(), 0.0);
-            }
-            q = q_deriv;
-        }
-        // a = (x[:, None] ** exponent_range)
-        std::vector<float> a((2 * radius + 1) * (order + 1), 0.0);
-        for (int i = 0; i < 2 * radius + 1; ++i) {
-            for (int j = 0; j < order + 1; ++j) {
-                a[i * (order + 1) + j] = std::pow(i - radius, j);
-            }
-        }
-        // q = a.dot(q)
-        std::vector<float> newQ(2 * radius + 1, 0.0);
-        for (int i = 0; i < 2 * radius + 1; ++i) {
-            newQ[i] = std::inner_product(a.begin() + i * (order + 1), a.begin() + (i + 1) * (order + 1), q.begin(), 0.0);
-        }
-        // q = q * phi_x
-        for (int i = 0; i < 2 * radius + 1; ++i) {
-            newQ[i] *= kernel[i];
-        }
-        return newQ;
-    }
-}
 
 /**
  * @brief Kernel for computing the Convolution1D
@@ -225,8 +262,15 @@ cv::Mat Convolution1D(cv::Mat image, std::vector<float> kernel, int axis)
  * @param sigma
  * @return
  */
-cv::Mat LoGFilter(cv::Mat image, float sigma)
+cv::Mat BlobFinder::LoGFilter(cv::Mat image, float sigma)
 {
+    // Check if sigma is in the precalculated list
+    auto it = std::find(sigma_precalculated.begin(), sigma_precalculated.end(), sigma);
+    if (it != sigma_precalculated.end())
+    {
+        int index = std::distance(sigma_precalculated.begin(), it);
+        return Convolution1D(Convolution1D(image, precalculated_kernels_gauss[index], 0), precalculated_kernels_laplacian[index], 1);
+    }
     int ksize = int(4 * sigma + 0.5);
     std::vector<float> deriv2kernel = gaussian_kernel1d(sigma, 2, ksize);
     std::vector<float> kernel = gaussian_kernel1d(sigma, 0, ksize);
@@ -255,7 +299,8 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
     cv::Mat cube(3, dims, CV_32F, cv::Scalar::all(0));
     // First slice is padding
     cv::Mat emptySlice = cv::Mat::zeros(image.size(), CV_32F);
-    std::memcpy(cube.data, emptySlice.data, emptySlice.rows * emptySlice.cols * sizeof(float));
+//    std::memcpy(cube.data, emptySlice.data, emptySlice.rows * emptySlice.cols * sizeof(float));
+    std::copy(std::execution::par_unseq, emptySlice.begin<float>(), emptySlice.end<float>(), cube.begin<float>());
     for (int i = 1; i < num_sigma; i++)
     {
         //ndi.gaussian_laplace(image, s)
@@ -266,10 +311,12 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
             return -x * currentSigma * currentSigma;
         });
         // Copy slice to cube
-        std::memcpy(cube.data + i * image.rows * image.cols * sizeof(float), slice.data, image.rows * image.cols * sizeof(float));
+//        std::memcpy(cube.data + i * image.rows * image.cols * sizeof(float), slice.data, image.rows * image.cols * sizeof(float));
+        std::copy(std::execution::par_unseq, slice.begin<float>(), slice.end<float>(), cube.begin<float>() + i * image.rows * image.cols);
     }
     // Last slice is padding
-    std::memcpy(cube.data + (num_sigma + 1) * emptySlice.rows * emptySlice.cols * sizeof(float), emptySlice.data, emptySlice.rows * emptySlice.cols * sizeof(float));
+//    std::memcpy(cube.data + (num_sigma + 1) * emptySlice.rows * emptySlice.cols * sizeof(float), emptySlice.data, emptySlice.rows * emptySlice.cols * sizeof(float));
+    std::copy(std::execution::par_unseq, emptySlice.begin<float>(), emptySlice.end<float>(), cube.begin<float>() + (num_sigma + 1) * emptySlice.rows * emptySlice.cols);
     // Compute local maximas
     // Compute peak mask
     int size = 1;
