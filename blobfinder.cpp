@@ -299,7 +299,6 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
     cv::Mat cube(3, dims, CV_32F, cv::Scalar::all(0));
     // First slice is padding
     cv::Mat emptySlice = cv::Mat::zeros(image.size(), CV_32F);
-//    std::memcpy(cube.data, emptySlice.data, emptySlice.rows * emptySlice.cols * sizeof(float));
     std::copy(std::execution::par_unseq, emptySlice.begin<float>(), emptySlice.end<float>(), cube.begin<float>());
     for (int i = 1; i < num_sigma; i++)
     {
@@ -311,11 +310,9 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
             return -x * currentSigma * currentSigma;
         });
         // Copy slice to cube
-//        std::memcpy(cube.data + i * image.rows * image.cols * sizeof(float), slice.data, image.rows * image.cols * sizeof(float));
         std::copy(std::execution::par_unseq, slice.begin<float>(), slice.end<float>(), cube.begin<float>() + i * image.rows * image.cols);
     }
     // Last slice is padding
-//    std::memcpy(cube.data + (num_sigma + 1) * emptySlice.rows * emptySlice.cols * sizeof(float), emptySlice.data, emptySlice.rows * emptySlice.cols * sizeof(float));
     std::copy(std::execution::par_unseq, emptySlice.begin<float>(), emptySlice.end<float>(), cube.begin<float>() + (num_sigma + 1) * emptySlice.rows * emptySlice.cols);
     // Compute local maximas
     // Compute peak mask
@@ -332,7 +329,7 @@ std::vector<std::tuple<int, int, float>> BlobFinder::blob_log(cv::Mat image, flo
     // sigmas_of_peaks = sigma_list[local_maxima[:, -1]]
     // lm = np.hstack([lm[:, :-1], sigmas_of_peaks])
     std::transform(std::execution::par_unseq, peaks.begin(), peaks.end(), peaks.begin(), [sigma_list](std::tuple<int, int, float>& x) {
-        // Corregimos radios (= desv. típica gaussiana) con raiz de 2:
+        // Correct radius (= gaussian standard deviation) with sqrt(2):
         std::get<0>(x) = sigma_list[std::get<0>(x) - 1] * std::sqrt(2);
         return x;
     });
