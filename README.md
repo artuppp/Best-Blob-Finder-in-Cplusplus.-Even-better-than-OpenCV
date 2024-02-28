@@ -2,7 +2,7 @@
 
 Example with downscaling
 
-´´´
+```
  cv::Mat imageRawWB2;
    cv::resize(imageRawWB, imageRawWB2, cv::Size(), 0.25, 0.25, cv::INTER_AREA);
 //    Inicializate image to 3 dimensional zeros
@@ -16,13 +16,13 @@ Example with downscaling
         std::get<2>(x) = std::get<2>(x) * 4;
         return x;
     });
-´´´
+```
 
 HEADER:
 
-´´´
+```
 std::vector<std::tuple<int,int,float>> blob_log(cv::Mat image, float min_sigma, float max_sigma, int num_sigma, float threshold, bool exclude_border);
-´´´
+```
 
 
 More information in: https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.blob_log
