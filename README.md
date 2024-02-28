@@ -3,6 +3,10 @@
 Example with downscaling
 
 ```
+// Constructor
+
+blobFinder = BlobFinder(5, 20, 4);
+
  cv::Mat imageRawWB2;
    cv::resize(imageRawWB, imageRawWB2, cv::Size(), 0.25, 0.25, cv::INTER_AREA);
 //    Inicializate image to 3 dimensional zeros
